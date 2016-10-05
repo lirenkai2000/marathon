@@ -1,7 +1,5 @@
 package mesosphere.marathon.core.task.bus
 
-import java.util.concurrent.TimeUnit
-
 import mesosphere.marathon.core.instance.update._
 import mesosphere.marathon.core.instance.{ Instance, InstanceStatus, TestInstanceBuilder }
 import mesosphere.marathon.core.pod.MesosContainer
@@ -70,41 +68,40 @@ object TaskStatusUpdateTestHelper {
     TaskStatusUpdateTestHelper(operation, effect)
   }
 
-  def makeMesosTaskStatus(taskId: Task.Id, state: TaskState, maybeHealth: Option[Boolean] = None, maybeReason: Option[TaskStatus.Reason] = None, maybeMessage: Option[String] = None, timestamp: Timestamp = Timestamp.zero) = {
-    val mesosStatus = TaskStatus.newBuilder
-      .setTaskId(taskId.mesosTaskId)
-      .setState(state)
-      .setTimestamp(TimeUnit.MILLISECONDS.convert(timestamp.toDateTime.getMillis, TimeUnit.MICROSECONDS).toDouble)
-    maybeHealth.foreach(mesosStatus.setHealthy)
-    maybeReason.foreach(mesosStatus.setReason)
-    maybeMessage.foreach(mesosStatus.setMessage)
-    mesosStatus.build()
-  }
-  def makeTaskStatus(taskId: Task.Id, state: TaskState, maybeHealth: Option[Boolean] = None, maybeReason: Option[TaskStatus.Reason] = None, maybeMessage: Option[String] = None) = {
-    makeMesosTaskStatus(taskId, state, maybeHealth, maybeReason, maybeMessage)
-  }
-
   def running(instance: Instance = defaultInstance, container: Option[MesosContainer] = None) = {
     val taskId = Task.Id.forInstanceId(instance.instanceId, container)
-    taskUpdateFor(instance, InstanceStatus.Running, makeTaskStatus(taskId, TaskState.TASK_RUNNING))
+    val status = MesosTaskStatusTestHelper.running(taskId)
+    taskUpdateFor(instance, InstanceStatus.Running, status)
   }
 
   def runningHealthy(instance: Instance = defaultInstance, container: Option[MesosContainer] = None) = {
     val taskId = Task.Id.forInstanceId(instance.instanceId, container)
-    taskUpdateFor(instance, InstanceStatus.Running, makeTaskStatus(taskId, TaskState.TASK_RUNNING, maybeHealth = Some(true)))
+    val status = MesosTaskStatusTestHelper.runningHealthy(taskId)
+    taskUpdateFor(instance, InstanceStatus.Running, status)
   }
 
   def runningUnhealthy(instance: Instance = defaultInstance, container: Option[MesosContainer] = None) = {
     val taskId = Task.Id.forInstanceId(instance.instanceId, container)
-    taskUpdateFor(instance, InstanceStatus.Running, makeTaskStatus(taskId, TaskState.TASK_RUNNING, maybeHealth = Some(false)))
+    val status = MesosTaskStatusTestHelper.runningUnhealthy(taskId)
+    taskUpdateFor(instance, InstanceStatus.Running, status)
   }
 
-  def staging(instance: Instance = defaultInstance) = taskUpdateFor(instance, InstanceStatus.Staging, makeTaskStatus(Task.Id.forInstanceId(instance.instanceId, None), TaskState.TASK_STAGING))
+  def staging(instance: Instance = defaultInstance) = {
+    val taskId = Task.Id.forInstanceId(instance.instanceId, None)
+    val status = MesosTaskStatusTestHelper.staging(taskId)
+    taskUpdateFor(instance, InstanceStatus.Staging, status)
+  }
 
-  def finished(instance: Instance = defaultInstance) = taskExpungeFor(instance, InstanceStatus.Finished, makeTaskStatus(Task.Id.forInstanceId(instance.instanceId, None), TaskState.TASK_FINISHED))
+  def finished(instance: Instance = defaultInstance) = {
+    val taskId = Task.Id.forInstanceId(instance.instanceId, None)
+    val status = MesosTaskStatusTestHelper.finished(taskId)
+    taskExpungeFor(instance, InstanceStatus.Finished, status)
+  }
 
   def lost(reason: Reason, instance: Instance = defaultInstance, maybeMessage: Option[String] = None) = {
-    val mesosStatus = makeTaskStatus(Task.Id.forInstanceId(instance.instanceId, None), TaskState.TASK_LOST, maybeReason = Some(reason), maybeMessage = maybeMessage)
+    val taskId = Task.Id.forInstanceId(instance.instanceId, None)
+    val mesosStatus =
+      MesosTaskStatusTestHelper.mesosStatus(state = TaskState.TASK_LOST, maybeReason = Some(reason), maybeMessage = maybeMessage, taskId = taskId)
     val marathonTaskStatus = MarathonTaskStatus(mesosStatus)
 
     marathonTaskStatus match {
@@ -117,7 +114,7 @@ object TaskStatusUpdateTestHelper {
   }
 
   def unreachable(instance: Instance = defaultInstance) = {
-    val mesosStatus = makeTaskStatus(Task.Id.forInstanceId(instance.instanceId, None), TaskState.TASK_UNREACHABLE)
+    val mesosStatus = MesosTaskStatusTestHelper.unreachable(Task.Id.forInstanceId(instance.instanceId, None))
     val marathonTaskStatus = MarathonTaskStatus(mesosStatus)
 
     marathonTaskStatus match {
@@ -132,12 +129,38 @@ object TaskStatusUpdateTestHelper {
   def killed(instance: Instance = defaultInstance) = {
     // TODO(PODS): the method signature should allow passing a taskId
     val taskId = instance.tasks.head.taskId
-    taskExpungeFor(instance, InstanceStatus.Killed, makeTaskStatus(taskId, TaskState.TASK_KILLED))
+    val status = MesosTaskStatusTestHelper.killed(taskId)
+    taskExpungeFor(instance, InstanceStatus.Killed, status)
   }
 
-  def killing(instance: Instance = defaultInstance) = taskUpdateFor(instance, InstanceStatus.Killing, makeTaskStatus(Task.Id.forInstanceId(instance.instanceId, None), TaskState.TASK_KILLING))
+  def killing(instance: Instance = defaultInstance) = {
+    val status = MesosTaskStatusTestHelper.killing(Task.Id.forInstanceId(instance.instanceId, None))
+    taskUpdateFor(instance, InstanceStatus.Killing, status)
+  }
 
-  def error(instance: Instance = defaultInstance) = taskExpungeFor(instance, InstanceStatus.Error, makeTaskStatus(Task.Id.forInstanceId(instance.instanceId, None), TaskState.TASK_ERROR))
+  def error(instance: Instance = defaultInstance) = {
+    val status = MesosTaskStatusTestHelper.error(Task.Id.forInstanceId(instance.instanceId, None))
+    taskExpungeFor(instance, InstanceStatus.Error, status)
+  }
 
-  def failed(instance: Instance = defaultInstance) = taskExpungeFor(instance, InstanceStatus.Failed, makeTaskStatus(Task.Id.forInstanceId(instance.instanceId, None), TaskState.TASK_FAILED))
+  //TODO(kjeschkies): I don't think these updates should be expunge updates. What's the distinction?
+  def failed(instance: Instance = defaultInstance) = {
+    val status = MesosTaskStatusTestHelper.failed(Task.Id.forInstanceId(instance.instanceId, None))
+    taskExpungeFor(instance, InstanceStatus.Failed, status)
+  }
+
+  def gone(instance: Instance = defaultInstance) = {
+    val status = MesosTaskStatusTestHelper.gone(Task.Id.forInstanceId(instance.instanceId, None))
+    taskExpungeFor(instance, InstanceStatus.Gone, status)
+  }
+
+  def dropped(instance: Instance = defaultInstance) = {
+    val status = MesosTaskStatusTestHelper.dropped(Task.Id.forInstanceId(instance.instanceId, None))
+    taskExpungeFor(instance, InstanceStatus.Dropped, status)
+  }
+
+  def unknown(instance: Instance = defaultInstance) = {
+    val status = MesosTaskStatusTestHelper.unknown(Task.Id.forInstanceId(instance.instanceId, None))
+    taskUpdateFor(instance, InstanceStatus.Unknown, status)
+  }
 }
