@@ -89,7 +89,7 @@ private class TaskLauncherActor(
   /** tasks that are in flight and those in the tracker */
   private[this] var tasksMap: Map[Task.Id, Task] = _
 
-  /** Decorator to use this actor as a [[base.OfferMatcher#TaskOpSource]] */
+  /** Decorator to use this actor as a [[mesosphere.marathon.core.matcher.base.OfferMatcher#TaskOpSource]] */
   private[this] val myselfAsLaunchSource = TaskOpSourceDelegate(self)
 
   override def preStart(): Unit = {
@@ -375,17 +375,30 @@ private class TaskLauncherActor(
       // yet.
       taskOp.stateOp.possibleNewState.foreach { newState =>
         tasksMap += taskId -> newState
+        // In case we don't receive an update a TaskOpRejected message with TASK_OP_REJECTED_TIMEOUT_REASON
+        // reason is scheduled within config.taskOpNotificationTimeout milliseconds. This will trigger another
+        // attempt to launch the task.
+        //
+        // NOTE: this can lead to a race condition where the task would be launched twice:
+        // - first because the timeout was triggered (because the system is currently overloaded)
+        // - and second when initial TaskOp.Launch finally returns
+        // This would lead to the app being overprovisioned (e.g. "3 of 2 tasks" launched) but eventually converge to the
+        // target task count when redundant tasks are killed. With a sufficiently high timeout interval
+        // this case should be fairly rare.
+        // A better solution would involve an overhaul of the way TaskLaunchActor works and might be
+        // a subject to change in the future.
         scheduleTaskOpTimeout(taskOp)
       }
 
       OfferMatcherRegistration.manageOfferMatcherStatus()
     }
 
+    updateActorState()
+
     log.info(
       "Request {} for task '{}', version '{}'. {}",
       taskOp.getClass.getSimpleName, taskOp.taskId.idString, runSpec.version, status)
 
-    updateActorState()
     sender() ! MatchedTaskOps(offer.getId, Seq(TaskOpWithSource(myselfAsLaunchSource, taskOp)))
   }
 
