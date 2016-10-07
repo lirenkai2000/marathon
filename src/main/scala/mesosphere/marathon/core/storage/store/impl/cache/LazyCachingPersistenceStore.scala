@@ -103,7 +103,7 @@ class LazyCachingPersistenceStore[K, Category, Serialized](
           Future.successful(v)
         case _ =>
           async { // linter:ignore UnnecessaryElseBranch
-            val value: Option[V] = await(store.get(id))
+            val value = await(store.get(id))
             valueCache.put(storageId, value)
             value
           }
@@ -142,13 +142,11 @@ class LazyCachingPersistenceStore[K, Category, Serialized](
     val category = ir.category
     val storageId = ir.toStorageId(id, None)
     lockManager.executeSequentially(category.toString) {
-      lockManager.executeSequentially(storageId.toString) {
-        async { // linter:ignore UnnecessaryElseBranch
-          await(store.store(id, v, version))
-          val old = idCache.getOrElse(category, Nil) // linter:ignore UndesirableTypeInference
-          idCache.put(category, id +: old)
-          Done
-        }
+      async { // linter:ignore UnnecessaryElseBranch
+        await(store.store(id, v, version))
+        val old = idCache.getOrElse(category, Nil) // linter:ignore UndesirableTypeInference
+        idCache.put(category, id +: old)
+        Done
       }
     }
   }

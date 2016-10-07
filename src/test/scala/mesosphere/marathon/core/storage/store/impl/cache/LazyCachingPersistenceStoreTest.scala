@@ -58,7 +58,7 @@ class LazyCachingPersistenceStoreTest extends AkkaUnitTest
       "purge the cache appropriately" in {
         implicit val clock = new SettableClock()
         val store = newStore
-        for (i <- 1 to 100) {
+        1.to(100).foreach { i =>
           val obj = TestClass1("abc", i)
           clock.plus(1.second)
           store.store("task-1", obj).futureValue should be(Done)
