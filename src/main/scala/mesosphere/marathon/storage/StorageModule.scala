@@ -100,7 +100,7 @@ object StorageModule {
         val appRepository = AppRepository.zkRepository(store)
         val podRepository = PodRepository.zkRepository(zk.copy(
           // TODO(PODS) be conservative: for now, only enable versioned value caching for pods
-          versionCacheConfig = Some(PersistenceStorageConfig.VersionCacheConfig.Default)).store)
+          versionCacheConfig = Some(VersionCacheConfig.Default)).store)
         val groupRepository = GroupRepository.zkRepository(store, appRepository, podRepository)
 
         val taskRepository = TaskRepository.zkRepository(store)

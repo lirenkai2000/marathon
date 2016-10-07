@@ -34,7 +34,7 @@ trait StorageConf extends ZookeeperConf {
   )
 
   lazy val versionCacheEnabled = toggle(
-    "version_caching",
+    "internal_version_caching",
     default = Some(true),
     noshort = true,
     hidden = true,

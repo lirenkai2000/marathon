@@ -186,7 +186,7 @@ object CacheType {
 sealed trait PersistenceStorageConfig[K, C, S] extends StorageConfig {
   val maxVersions: Int
   val cacheType: CacheType
-  val versionCacheConfig: Option[PersistenceStorageConfig.VersionCacheConfig]
+  val versionCacheConfig: Option[VersionCacheConfig]
 
   protected def leafStore(implicit metrics: Metrics, mat: Materializer, ctx: ExecutionContext,
     scheduler: Scheduler, actorRefFactory: ActorRefFactory): BasePersistenceStore[K, C, S]
@@ -207,29 +207,26 @@ sealed trait PersistenceStorageConfig[K, C, S] extends StorageConfig {
   }
 }
 
-object PersistenceStorageConfig {
+case class VersionCacheConfig(
+  maxEntries: Int,
+  purgeCount: Int,
+  pRemove: Double
+)
 
-  case class VersionCacheConfig(
-    maxEntries: Int,
-    purgeCount: Int,
-    pRemove: Double
-  )
+object VersionCacheConfig {
+  /**
+    * max number of entries allowed in the versioned value cache before entries are purged
+    */
+  protected val MaxVersionedCacheSize = 10000
+  /**
+    * probability that, during a purge of the versioned value cache, a given entry will be removed
+    */
+  protected val ProbabilityToRemoveFromCache = 0.05
 
-  object VersionCacheConfig {
-    /**
-      * max number of entries allowed in the versioned value cache before entries are purged
-      */
-    protected val maxVersionedCacheSize = 10000
-    /**
-      * probability that, during a purge of the versioned value cache, a given entry will be removed
-      */
-    protected val pRemoveFromVersionedCache = 0.05
+  val Default = apply(MaxVersionedCacheSize, ProbabilityToRemoveFromCache)
 
-    val Default = apply(maxVersionedCacheSize, pRemoveFromVersionedCache)
-
-    def apply(maxEntries: Int, pRemove: Double): VersionCacheConfig =
-      new VersionCacheConfig(maxEntries, (maxEntries * pRemove).toInt, pRemove)
-  }
+  def apply(maxEntries: Int, pRemove: Double): VersionCacheConfig =
+    new VersionCacheConfig(maxEntries, (maxEntries * pRemove).toInt, pRemove)
 }
 
 case class CuratorZk(
@@ -247,7 +244,7 @@ case class CuratorZk(
     maxConcurrent: Int,
     maxOutstanding: Int,
     maxVersions: Int,
-    versionCacheConfig: Option[PersistenceStorageConfig.VersionCacheConfig]
+    versionCacheConfig: Option[VersionCacheConfig]
 ) extends PersistenceStorageConfig[ZkId, String, ZkSerialized] {
 
   lazy val client: RichCuratorFramework = {
@@ -331,7 +328,7 @@ object CuratorZk {
 
 case class InMem(maxVersions: Int) extends PersistenceStorageConfig[RamId, String, Identity] {
   override val cacheType: CacheType = NoCaching
-  override val versionCacheConfig: Option[PersistenceStorageConfig.VersionCacheConfig] = None
+  override val versionCacheConfig: Option[VersionCacheConfig] = None
 
   protected def leafStore(implicit metrics: Metrics, mat: Materializer, ctx: ExecutionContext,
     scheduler: Scheduler, actorRefFactory: ActorRefFactory): BasePersistenceStore[RamId, String, Identity] =
@@ -350,7 +347,7 @@ object InMem {
 
 object StorageConfig {
   // TODO(jdef) disabled globally until proven; eventually the default value here will be non-empty
-  val DefaultVersionCacheConfig = Option.empty[PersistenceStorageConfig.VersionCacheConfig]
+  val DefaultVersionCacheConfig = Option.empty[VersionCacheConfig]
 
   val DefaultLegacyMaxVersions = 25
   val DefaultMaxVersions = 5000

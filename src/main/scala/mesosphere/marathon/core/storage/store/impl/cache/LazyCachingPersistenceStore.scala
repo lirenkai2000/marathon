@@ -11,7 +11,7 @@ import com.typesafe.scalalogging.StrictLogging
 import mesosphere.marathon.Protos.StorageVersion
 import mesosphere.marathon.core.storage.store.impl.BasePersistenceStore
 import mesosphere.marathon.core.storage.store.{ IdResolver, PersistenceStore }
-import mesosphere.marathon.storage.PersistenceStorageConfig
+import mesosphere.marathon.storage.VersionCacheConfig
 import mesosphere.util.LockManager
 
 import scala.async.Async.{ async, await }
@@ -165,7 +165,7 @@ case class LazyCachingPersistenceStore[K, Category, Serialized](
 
 case class LazyVersionCachingPersistentStore[K, Category, Serialized](
     store: PersistenceStore[K, Category, Serialized],
-    config: PersistenceStorageConfig.VersionCacheConfig = PersistenceStorageConfig.VersionCacheConfig.Default)(implicit
+    config: VersionCacheConfig = VersionCacheConfig.Default)(implicit
   mat: Materializer,
     ctx: ExecutionContext) extends PersistenceStore[K, Category, Serialized] with StrictLogging {
 
@@ -191,7 +191,7 @@ case class LazyVersionCachingPersistentStore[K, Category, Serialized](
 
     while (versionedValueCache.size > maxEntries) {
       // randomly GC the versions
-      var counter: Int = 0
+      var counter = 0
       versionedValueCache.retain { (k, v) =>
         val x = Random.nextDouble()
         x > pRemove || { counter += 1; counter > purgeCount }
@@ -214,15 +214,14 @@ case class LazyVersionCachingPersistentStore[K, Category, Serialized](
   protected def deleteCurrentOrAll[Id, V](
     id: Id, delete: () => Future[Done])(implicit ir: IdResolver[Id, V, Category, K]): Future[Done] = {
 
-    val storeDeleteOp: Future[Done] = delete()
     if (!ir.hasVersions) {
-      storeDeleteOp
+      delete()
     } else {
       withVersionCache(id) { (category, storageId) =>
         withVersionedValueCache {
           async {
             // linter:ignore UnnecessaryElseBranch
-            await(storeDeleteOp)
+            await(delete())
             versionedValueCache.retain { case ((sid, version), v) => sid != storageId }
             versionCache.remove((category, storageId))
             Done
