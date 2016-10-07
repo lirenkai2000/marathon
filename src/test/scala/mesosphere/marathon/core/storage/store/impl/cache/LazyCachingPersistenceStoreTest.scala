@@ -28,6 +28,8 @@ class LazyCachingPersistenceStoreTest extends AkkaUnitTest
     LazyCachingPersistenceStore(new InMemoryPersistenceStore())
   }
 
+  private def withLazyVersionCaching = new LazyVersionCachingPersistentStore(cachedInMemory)
+
   def zkStore: ZkPersistenceStore = {
     implicit val metrics = new Metrics(new MetricRegistry)
 
@@ -42,11 +44,11 @@ class LazyCachingPersistenceStoreTest extends AkkaUnitTest
   behave like basicPersistenceStore("LazyCache(Zk)", cachedZk)
   // TODO: Mock out the backing store.
 
-  behave like cachingPersistenceStore("cache internals(InMemory)", cachedInMemory)
+  behave like cachingPersistenceStore("cache internals(InMemory)", withLazyVersionCaching)
 
   def cachingPersistenceStore[K, C, Serialized](
     name: String,
-    newStore: => LazyCachingPersistenceStore[K, C, Serialized])(
+    newStore: => LazyVersionCachingPersistentStore[K, C, Serialized])(
     implicit
     ir: IdResolver[String, TestClass1, C, K],
     m: Marshaller[TestClass1, Serialized],
@@ -62,7 +64,7 @@ class LazyCachingPersistenceStoreTest extends AkkaUnitTest
           store.store("task-1", obj).futureValue should be(Done)
         }
         store.versionedValueCache.size should be(100) // sanity
-        store.maybePurgeCachedVersions(toRemove = 10){ () => store.versionedValueCache.size > 50 }
+        store.maybePurgeCachedVersions(maxEntries = 50, purgeCount = 10)
         store.versionedValueCache.size > 40 should be(true)
         store.versionedValueCache.size <= 50 should be(true)
       }
@@ -142,7 +144,7 @@ class LazyCachingPersistenceStoreTest extends AkkaUnitTest
         store.versionedValueCache.size should be(1)
         store.versionedValueCache.contains((storageId, original.version)) should be(true)
 
-        store.versionCache.size should be(0)
+        store.versionCache.size should be(1)
       }
 
       "reload versionedValueCache upon unversioned get requests" in {
@@ -156,8 +158,6 @@ class LazyCachingPersistenceStoreTest extends AkkaUnitTest
 
         store.versionCache.clear()
         store.versionedValueCache.clear()
-        store.valueCache.clear()
-        store.idCache.clear()
 
         store.get("task-1").futureValue should be(Some(updated)) // sanity check
 
@@ -166,7 +166,7 @@ class LazyCachingPersistenceStoreTest extends AkkaUnitTest
         store.versionedValueCache.size should be(1)
         store.versionedValueCache.contains((storageId, updated.version)) should be(true)
 
-        store.versionCache.size should be(0)
+        store.versionCache.size should be(1)
       }
     }
   }
