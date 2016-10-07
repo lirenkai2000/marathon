@@ -92,10 +92,7 @@ class TaskStatusUpdateProcessorImplTest extends UnitTest {
       "load the task in the task tracker" in {
         verify(f.taskTracker).instance(instance.instanceId)
       }
-      "mark the task as TASK_FAILED" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
-      "expunge the the task" in { verify(f.stateOpProcessor).process(InstanceUpdateOperation.ForceExpunge(instance.instanceId)) }
-      "start a new task" in { true should be(false) }
-
+      "pass the TASK_FAILED update" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
       "acknowledge the update" in { verify(f.schedulerDriver).acknowledgeStatusUpdate(status) }
       "not do anything else" in { f.verifyNoMoreInteractions() }
     }
@@ -112,10 +109,7 @@ class TaskStatusUpdateProcessorImplTest extends UnitTest {
       f.updateProcessor.publish(status).futureValue
 
       "load the task in the task tracker" in { verify(f.taskTracker).instance(instance.instanceId) }
-      "mark the task as TASK_GONE" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
-      "expunge the the task" in { verify(f.stateOpProcessor).process(InstanceUpdateOperation.ForceExpunge(instance.instanceId)) }
-      "start a new task" in { true should be(false) }
-
+      "pass the TASK_GONE update" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
       "acknowledge the update" in { verify(f.schedulerDriver).acknowledgeStatusUpdate(status) }
       "not do anything else" in { f.verifyNoMoreInteractions() }
     }
@@ -132,10 +126,7 @@ class TaskStatusUpdateProcessorImplTest extends UnitTest {
       f.updateProcessor.publish(status).futureValue
 
       "load the task in the task tracker" in { verify(f.taskTracker).instance(instance.instanceId) }
-      "mark the task as TASK_DROPPED" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
-      "expunge the the task" in { verify(f.stateOpProcessor).process(InstanceUpdateOperation.ForceExpunge(instance.instanceId)) }
-      "start a new task" in { true should be(false) }
-
+      "pass the TASK_DROPPED update" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
       "acknowledge the update" in { verify(f.schedulerDriver).acknowledgeStatusUpdate(status) }
       "not do anything else" in { f.verifyNoMoreInteractions() }
     }
@@ -152,10 +143,7 @@ class TaskStatusUpdateProcessorImplTest extends UnitTest {
       f.updateProcessor.publish(status).futureValue
 
       "load the task in the task tracker" in { verify(f.taskTracker).instance(instance.instanceId) }
-      "mark the task as TASK_DROPPED" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
-      "expunge the the task" in { verify(f.stateOpProcessor).process(InstanceUpdateOperation.ForceExpunge(instance.instanceId)) }
-      "start a new task" in { true should be(false) }
-
+      "pass the TASK_DROPPED update" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
       "acknowledge the update" in { verify(f.schedulerDriver).acknowledgeStatusUpdate(status) }
       "not do anything else" in { f.verifyNoMoreInteractions() }
     }
@@ -172,10 +160,7 @@ class TaskStatusUpdateProcessorImplTest extends UnitTest {
       f.updateProcessor.publish(status).futureValue
 
       "load the task in the task tracker" in { verify(f.taskTracker).instance(instance.instanceId) }
-      "mark the task as TASK_UNREACHABLE" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
-      "acknowledge the update" in { verify(f.schedulerDriver).acknowledgeStatusUpdate(status) }
-      "not do anything else" in { f.verifyNoMoreInteractions() }
-    }
+      "pass the TASK_UNREACHABLE update" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
 
     "receiving a TASK_UNREACHABLE status update for a staging task" should withFixture { f =>
       val instance = TestInstanceBuilder.newBuilder(appId).addTaskStaged().getInstance()
@@ -189,7 +174,7 @@ class TaskStatusUpdateProcessorImplTest extends UnitTest {
       f.updateProcessor.publish(status).futureValue
 
       "load the task in the task tracker" in { verify(f.taskTracker).instance(instance.instanceId) }
-      "mark the task as TASK_UNREACHABLE" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
+      "pass the TASK_UNREACHABLE update" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
       "acknowledge the update" in { verify(f.schedulerDriver).acknowledgeStatusUpdate(status) }
       "not do anything else" in { f.verifyNoMoreInteractions() }
     }
@@ -206,7 +191,7 @@ class TaskStatusUpdateProcessorImplTest extends UnitTest {
       f.updateProcessor.publish(status).futureValue
 
       "load the task in the task tracker" in { verify(f.taskTracker).instance(instance.instanceId) }
-      "mark the task as TASK_UNREACHABLE" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
+      "pass the TASK_UNREACHABLE update" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
       "acknowledge the update" in { verify(f.schedulerDriver).acknowledgeStatusUpdate(status) }
       "not do anything else" in { f.verifyNoMoreInteractions() }
     }
@@ -223,8 +208,7 @@ class TaskStatusUpdateProcessorImplTest extends UnitTest {
       f.updateProcessor.publish(status).futureValue
 
       "load the task in the task tracker" in { verify(f.taskTracker).instance(instance.instanceId) }
-      "mark the task as TASK_UNKNOWN" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
-      "expunge the the task" in { verify(f.stateOpProcessor).process(InstanceUpdateOperation.ForceExpunge(instance.instanceId)) }
+      "pass the TASK_UNKNOWN upate" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
       "acknowledge the update" in { verify(f.schedulerDriver).acknowledgeStatusUpdate(status) }
       "not do anything else" in { f.verifyNoMoreInteractions() }
     }
