@@ -78,7 +78,7 @@ class TaskStatusUpdateProcessorImplTest extends UnitTest {
       "not do anything else" in { f.verifyNoMoreInteractions() }
     }
 
-    "receiving a TASK_FAILED status update for a running task" should withFixture { f=>
+    "receiving a TASK_FAILED status update for a running task" should withFixture { f =>
       val instance = TestInstanceBuilder.newBuilder(appId).addTaskRunning().getInstance()
       val update = TaskStatusUpdateTestHelper.failed(instance)
       val status = update.status
@@ -97,7 +97,7 @@ class TaskStatusUpdateProcessorImplTest extends UnitTest {
       "not do anything else" in { f.verifyNoMoreInteractions() }
     }
 
-    "receiving a TASK_GONE status update for a running task" should withFixture { f=>
+    "receiving a TASK_GONE status update for a running task" should withFixture { f =>
       val instance = TestInstanceBuilder.newBuilder(appId).addTaskRunning().getInstance()
       val update = TaskStatusUpdateTestHelper.gone(instance)
       val status = update.status
@@ -159,8 +159,13 @@ class TaskStatusUpdateProcessorImplTest extends UnitTest {
 
       f.updateProcessor.publish(status).futureValue
 
-      "load the task in the task tracker" in { verify(f.taskTracker).instance(instance.instanceId) }
-      "pass the TASK_UNREACHABLE update" in { verify(f.stateOpProcessor).process(expectedTaskStateOp) }
+      "load the task in the task tracker" in {
+        verify(f.taskTracker).instance(instance.instanceId)
+      }
+      "pass the TASK_UNREACHABLE update" in {
+        verify(f.stateOpProcessor).process(expectedTaskStateOp)
+      }
+    }
 
     "receiving a TASK_UNREACHABLE status update for a staging task" should withFixture { f =>
       val instance = TestInstanceBuilder.newBuilder(appId).addTaskStaged().getInstance()
