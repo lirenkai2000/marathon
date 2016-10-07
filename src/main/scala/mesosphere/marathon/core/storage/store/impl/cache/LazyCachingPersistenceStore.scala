@@ -1,7 +1,6 @@
 package mesosphere.marathon.core.storage.store.impl.cache
 
 import java.time.OffsetDateTime
-import java.util.concurrent.atomic.AtomicInteger
 
 import akka.http.scaladsl.marshalling.Marshaller
 import akka.http.scaladsl.unmarshalling.Unmarshaller
@@ -12,12 +11,14 @@ import com.typesafe.scalalogging.StrictLogging
 import mesosphere.marathon.Protos.StorageVersion
 import mesosphere.marathon.core.storage.store.impl.BasePersistenceStore
 import mesosphere.marathon.core.storage.store.{ IdResolver, PersistenceStore }
+import mesosphere.marathon.storage.PersistenceStorageConfig
 import mesosphere.util.LockManager
 
 import scala.async.Async.{ async, await }
 import scala.collection.concurrent.TrieMap
 import scala.collection.immutable.Seq
 import scala.concurrent.{ ExecutionContext, Future }
+import scala.util.Random
 
 /**
   * A Write Ahead Cache of another persistence store that lazily loads values into the cache.
@@ -28,8 +29,8 @@ import scala.concurrent.{ ExecutionContext, Future }
   * @tparam K The persistence store's primary key type
   * @tparam Serialized The serialized format for the persistence store.
   */
-class LazyCachingPersistenceStore[K, Category, Serialized](
-    val store: BasePersistenceStore[K, Category, Serialized])(implicit
+case class LazyCachingPersistenceStore[K, Category, Serialized](
+    store: BasePersistenceStore[K, Category, Serialized])(implicit
   mat: Materializer,
     ctx: ExecutionContext) extends PersistenceStore[K, Category, Serialized] with StrictLogging {
 
@@ -162,17 +163,9 @@ class LazyCachingPersistenceStore[K, Category, Serialized](
   override def toString: String = s"LazyCachingPersistenceStore($store)"
 }
 
-object LazyCachingPersistenceStore {
-
-  def apply[K, Category, Serialized](
-    store: BasePersistenceStore[K, Category, Serialized])(implicit
-    mat: Materializer,
-    ctx: ExecutionContext) = new LazyCachingPersistenceStore(store)
-}
-
-class LazyVersionCachingPersistentStore[K, Category, Serialized](
-    val store: LazyCachingPersistenceStore[K, Category, Serialized],
-    val config: LazyVersionCachingPersistentStore.Config = LazyVersionCachingPersistentStore.Config.Default)(implicit
+case class LazyVersionCachingPersistentStore[K, Category, Serialized](
+    store: PersistenceStore[K, Category, Serialized],
+    config: PersistenceStorageConfig.VersionCacheConfig = PersistenceStorageConfig.VersionCacheConfig.Default)(implicit
   mat: Materializer,
     ctx: ExecutionContext) extends PersistenceStore[K, Category, Serialized] with StrictLogging {
 
@@ -180,40 +173,63 @@ class LazyVersionCachingPersistentStore[K, Category, Serialized](
   private[store] val versionCache = TrieMap.empty[(Category, K), Seq[OffsetDateTime]]
   private[store] val versionedValueCache = TrieMap.empty[(K, OffsetDateTime), Option[Any]]
 
-  final def withVersionedValueCache[Id, V, T](
+  def withVersionedValueCache[Id, V, T](
     future: => Future[T])(implicit ir: IdResolver[Id, V, Category, K]): Future[T] =
     lockManager.executeSequentially(s"versionedValueCache::${ir.category}")(future)
 
-  final def withVersionCache[Id, V, T](
-    id: Id)(
-    future: (Category, K) => Future[T])(implicit ir: IdResolver[Id, V, Category, K]): Future[T] = {
+  def withVersionCache[Id, V, T](
+    id: Id)(future: (Category, K) => Future[T])(implicit ir: IdResolver[Id, V, Category, K]): Future[T] = {
     val category = ir.category
     val storageId = ir.toStorageId(id, None)
     lockManager.executeSequentially((category, storageId).toString())(future(category, storageId))
   }
 
+  protected[cache] def maybePurgeCachedVersions(
+    maxEntries: Int = config.maxEntries,
+    purgeCount: Int = config.purgeCount,
+    pRemove: Double = config.pRemove): Unit =
+
+    while (versionedValueCache.size > maxEntries) {
+      // randomly GC the versions
+      var counter: Int = 0
+      versionedValueCache.retain { (k, v) =>
+        val x = Random.nextDouble()
+        x > pRemove || { counter += 1; counter > purgeCount }
+      }
+    }
+
+  protected def updateCachedVersions[V](
+    storageId: K,
+    version: OffsetDateTime,
+    category: Category,
+    v: V): Unit = {
+
+    maybePurgeCachedVersions()
+    versionedValueCache.put((storageId, version), Some(v))
+    val cached = versionCache.getOrElse((category, storageId), Nil) // linter:ignore UndesirableTypeInference
+    versionCache.put((category, storageId), (version +: cached).distinct)
+  }
+
   @SuppressWarnings(Array("all")) // async/await
   protected def deleteCurrentOrAll[Id, V](
-    id: Id,
-    delete: () => Future[Done])(implicit ir: IdResolver[Id, V, Category, K]): Future[Done] = {
+    id: Id, delete: () => Future[Done])(implicit ir: IdResolver[Id, V, Category, K]): Future[Done] = {
 
-    val cacheDeleteOp: Future[Done] = store.deleteCurrentOrAll(id, delete)
-    val versionDeleteOp: Future[Done] =
-      if (!ir.hasVersions)
-        Future.successful(Done)
-      else {
-        withVersionCache(id) { (category, storageId) =>
-          withVersionedValueCache {
-            async { // linter:ignore UnnecessaryElseBranch
-              versionedValueCache.retain { case ((sid, version), v) => sid != storageId }
-              versionCache.remove((category, storageId))
-              Done
-            }
+    val storeDeleteOp: Future[Done] = delete()
+    if (!ir.hasVersions) {
+      storeDeleteOp
+    } else {
+      withVersionCache(id) { (category, storageId) =>
+        withVersionedValueCache {
+          async {
+            // linter:ignore UnnecessaryElseBranch
+            await(storeDeleteOp)
+            versionedValueCache.retain { case ((sid, version), v) => sid != storageId }
+            versionCache.remove((category, storageId))
+            Done
           }
         }
       }
-
-    cacheDeleteOp.zip(versionDeleteOp).flatMap(_ => Future.successful(Done))
+    }
   }
 
   @SuppressWarnings(Array("all")) // async/await
@@ -221,9 +237,9 @@ class LazyVersionCachingPersistentStore[K, Category, Serialized](
     ir: IdResolver[Id, V, Category, K],
     um: Unmarshaller[Serialized, V]): Future[Option[V]] = {
 
-    if (!ir.hasVersions)
+    if (!ir.hasVersions) {
       store.get(id)
-    else {
+    } else {
       withVersionCache(id) { (category, storageId) =>
         withVersionedValueCache {
           async { // linter:ignore UnnecessaryElseBranch
@@ -239,6 +255,7 @@ class LazyVersionCachingPersistentStore[K, Category, Serialized](
     }
   }
 
+  @SuppressWarnings(Array("all")) // async/await
   override def get[Id, V](id: Id, version: OffsetDateTime)(implicit
     ir: IdResolver[Id, V, Category, K],
     um: Unmarshaller[Serialized, V]): Future[Option[V]] = {
@@ -265,9 +282,9 @@ class LazyVersionCachingPersistentStore[K, Category, Serialized](
     ir: IdResolver[Id, V, Category, K],
     m: Marshaller[V, Serialized]): Future[Done] = {
 
-    if (!ir.hasVersions)
+    if (!ir.hasVersions) {
       store.store(id, v)
-    else {
+    } else {
       withVersionCache(id) { (category, storageId) =>
         withVersionedValueCache {
           async { // linter:ignore UnnecessaryElseBranch
@@ -308,6 +325,7 @@ class LazyVersionCachingPersistentStore[K, Category, Serialized](
     version: OffsetDateTime)(implicit ir: IdResolver[Id, V, Category, K]): Future[Done] =
     deleteCurrentOrAll(k, () => store.deleteVersion(k, version))
 
+  @SuppressWarnings(Array("all")) // async/await
   override def versions[Id, V](id: Id)(implicit ir: IdResolver[Id, V, Category, K]): Source[OffsetDateTime, NotUsed] = {
     val versionsFuture = withVersionCache(id) { (category, storageId) =>
       if (versionCache.contains((category, storageId))) {
@@ -330,55 +348,5 @@ class LazyVersionCachingPersistentStore[K, Category, Serialized](
   override def setStorageVersion(storageVersion: StorageVersion): Future[Done] =
     store.setStorageVersion(storageVersion)
 
-  protected[cache] def maybePurgeCachedVersions(
-    maxEntries: Int = config.maxEntries,
-    purgeCount: Int = config.purgeCount,
-    pRemove: Double = config.pRemove): Unit =
-
-    while (versionedValueCache.size > maxEntries) {
-      // randomly GC the versions
-      val counter = new AtomicInteger
-      versionedValueCache.retain { (k, v) =>
-        val x = scala.util.Random.nextDouble()
-        x > pRemove || counter.incrementAndGet() > purgeCount
-      }
-    }
-
-  protected def updateCachedVersions[V](
-    storageId: K,
-    version: OffsetDateTime,
-    category: Category,
-    v: V): Unit = {
-
-    maybePurgeCachedVersions()
-    versionedValueCache.put((storageId, version), Some(v))
-    val cached = versionCache.getOrElse((category, storageId), Nil) // linter:ignore UndesirableTypeInference
-    versionCache.put((category, storageId), (version +: cached).distinct)
-  }
-}
-
-object LazyVersionCachingPersistentStore {
-
-  case class Config(
-    maxEntries: Int = maxVersionedValueCacheSize,
-    purgeCount: Int = purgeCountFromVersionedValueCache,
-    pRemove: Double = pRemoveFromVersionedValueCache
-  )
-
-  object Config {
-    val Default = Config()
-  }
-
-  /**
-    * max number of entries allowed in versionedValueCache before entries are purged
-    */
-  val maxVersionedValueCacheSize = 10000
-  /**
-    * max number of entries to remove during cycle of purging versionedValueCache
-    */
-  val purgeCountFromVersionedValueCache = 500
-  /**
-    * probability that, during a purge of versionedValueCache, a given entry will be removed
-    */
-  val pRemoveFromVersionedValueCache = 0.05
+  override def toString: String = s"LazyVersionCachingPersistenceStore($store)"
 }
