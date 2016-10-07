@@ -61,7 +61,7 @@ case class LazyCachingPersistenceStore[K, Category, Serialized](
   }
 
   @SuppressWarnings(Array("all")) // async/await
-  protected[impl] def deleteCurrentOrAll[Id, V](
+  private def deleteCurrentOrAll[Id, V](
     k: Id,
     delete: () => Future[Done])(implicit ir: IdResolver[Id, V, Category, K]): Future[Done] = {
     val category = ir.category
@@ -211,7 +211,7 @@ case class LazyVersionCachingPersistentStore[K, Category, Serialized](
   }
 
   @SuppressWarnings(Array("all")) // async/await
-  protected def deleteCurrentOrAll[Id, V](
+  private def deleteCurrentOrAll[Id, V](
     id: Id, delete: () => Future[Done])(implicit ir: IdResolver[Id, V, Category, K]): Future[Done] = {
 
     if (!ir.hasVersions) {
