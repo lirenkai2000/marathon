@@ -4,17 +4,17 @@ import akka.stream.scaladsl.Sink
 import com.codahale.metrics.MetricRegistry
 import mesosphere.marathon.Protos.MarathonTask
 import mesosphere.marathon.core.instance.InstanceStatus
-import mesosphere.marathon.core.task.bus.TaskStatusUpdateTestHelper
-import mesosphere.marathon.core.task.tracker.impl.{ MarathonTaskStatusSerializer, TaskSerializer }
-import mesosphere.marathon.core.task.{ MarathonTaskStatus, Task }
+import mesosphere.marathon.core.task.bus.MesosTaskStatusTestHelper
+import mesosphere.marathon.core.task.tracker.impl.{MarathonTaskStatusSerializer, TaskSerializer}
+import mesosphere.marathon.core.task.{MarathonTaskStatus, Task}
 import mesosphere.marathon.metrics.Metrics
 import mesosphere.marathon.state.MarathonTaskState
 import mesosphere.marathon.storage.LegacyInMemConfig
 import mesosphere.marathon.storage.repository.TaskRepository
-import mesosphere.marathon.test.{ MarathonActorSupport, MarathonSpec }
+import mesosphere.marathon.test.{MarathonActorSupport, MarathonSpec}
 import org.apache.mesos
 import org.apache.mesos.Protos.TaskStatus
-import org.scalatest.{ GivenWhenThen, Matchers }
+import org.scalatest.{GivenWhenThen, Matchers}
 
 import scala.concurrent.ExecutionContext
 
@@ -85,7 +85,7 @@ class MigrationTo1_2Test extends MarathonSpec with GivenWhenThen with Matchers w
   }
 
   private def makeMarathonTaskState(taskId: String, taskState: mesos.Protos.TaskState, maybeReason: Option[TaskStatus.Reason] = None, marathonTaskStatus: Option[InstanceStatus] = None): MarathonTaskState = {
-    val mesosStatus = TaskStatusUpdateTestHelper.makeMesosTaskStatus(Task.Id.forRunSpec(taskId.toPath), taskState, maybeReason = maybeReason)
+    val mesosStatus = MesosTaskStatusTestHelper.mesosStatus(taskId = Task.Id.forRunSpec(taskId.toPath), state = taskState, maybeReason = maybeReason)
     val builder = MarathonTask.newBuilder()
       .setId(taskId)
       .setStatus(mesosStatus)

@@ -1,7 +1,7 @@
 package mesosphere.marathon.core.task.tracker.impl
 
 import akka.Done
-import akka.actor.{ ActorRef, Status }
+import akka.actor.{ActorRef, Status}
 import akka.event.EventStream
 import akka.testkit.TestProbe
 import ch.qos.logback.classic.Level
@@ -12,22 +12,22 @@ import mesosphere.marathon.core.CoreGuiceModule
 import mesosphere.marathon.core.base.ConstantClock
 import mesosphere.marathon.core.health.HealthCheckManager
 import mesosphere.marathon.core.instance.Instance
-import mesosphere.marathon.core.instance.update.{ InstanceUpdateEffect, InstanceUpdateOperation }
+import mesosphere.marathon.core.instance.update.{InstanceUpdateEffect, InstanceUpdateOperation}
 import mesosphere.marathon.core.launchqueue.LaunchQueue
-import mesosphere.marathon.core.task.bus.{ MesosTaskStatusTestHelper, TaskStatusEmitter }
+import mesosphere.marathon.core.task.bus.{MesosTaskStatusTestHelper, TaskStatusEmitter}
 import mesosphere.marathon.core.task.tracker.TaskUpdater
-import mesosphere.marathon.core.task.update.impl.steps.{ NotifyHealthCheckManagerStepImpl, NotifyLaunchQueueStepImpl, NotifyRateLimiterStepImpl, PostToEventStreamStepImpl, ScaleAppUpdateStepImpl, TaskStatusEmitterPublishStepImpl }
+import mesosphere.marathon.core.task.update.impl.steps.{NotifyHealthCheckManagerStepImpl, NotifyLaunchQueueStepImpl, NotifyRateLimiterStepImpl, PostToEventStreamStepImpl, ScaleAppUpdateStepImpl, TaskStatusEmitterPublishStepImpl}
 import mesosphere.marathon.metrics.Metrics
-import mesosphere.marathon.state.{ PathId, Timestamp }
-import mesosphere.marathon.storage.repository.{ AppRepository, InstanceRepository, ReadOnlyAppRepository }
-import mesosphere.marathon.test.{ CaptureLogEvents, MarathonActorSupport, Mockito, _ }
+import mesosphere.marathon.state.{PathId, Timestamp}
+import mesosphere.marathon.storage.repository.{AppRepository, InstanceRepository, ReadOnlyAppRepository}
+import mesosphere.marathon.test.{CaptureLogEvents, MarathonActorSupport, Mockito, _}
 import org.apache.mesos.SchedulerDriver
 import org.scalatest.concurrent.ScalaFutures
-import org.scalatest.{ GivenWhenThen, Matchers }
+import org.scalatest.{GivenWhenThen, Matchers}
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
-import scala.util.{ Failure, Success, Try }
+import scala.util.{Failure, Success, Try}
 
 class InstanceOpProcessorImplTest
     extends MarathonActorSupport with MarathonSpec with Mockito with GivenWhenThen with ScalaFutures with Matchers {
@@ -44,7 +44,7 @@ class InstanceOpProcessorImplTest
     Given("a taskRepository")
     val builder = TestInstanceBuilder.newBuilderWithLaunchedTask(appId)
     val instance = builder.getInstance()
-    val stateOp = builder.stateOpUpdate(MesosTaskStatusTestHelper.runningHealthy)
+    val stateOp = builder.stateOpUpdate(MesosTaskStatusTestHelper.runningHealthy())
     val mesosStatus = stateOp.mesosStatus
     val expectedEffect = InstanceUpdateEffect.Update(instance, Some(instance), events = Nil)
     val ack = InstanceTrackerActor.Ack(f.opSender.ref, expectedEffect)
@@ -82,7 +82,7 @@ class InstanceOpProcessorImplTest
     Given("a taskRepository and existing task")
     val builder = TestInstanceBuilder.newBuilderWithLaunchedTask(appId)
     val instance = builder.getInstance()
-    val stateOp = builder.stateOpUpdate(MesosTaskStatusTestHelper.running)
+    val stateOp = builder.stateOpUpdate(MesosTaskStatusTestHelper.running())
     val expectedEffect = InstanceUpdateEffect.Update(instance, Some(instance), events = Nil)
     val ack = InstanceTrackerActor.Ack(f.opSender.ref, expectedEffect)
     f.stateOpResolver.resolve(stateOp) returns Future.successful(expectedEffect)
@@ -126,7 +126,7 @@ class InstanceOpProcessorImplTest
     Given("a taskRepository and no task")
     val builder = TestInstanceBuilder.newBuilderWithLaunchedTask(appId)
     val instance = builder.getInstance()
-    val stateOp = builder.stateOpUpdate(MesosTaskStatusTestHelper.running)
+    val stateOp = builder.stateOpUpdate(MesosTaskStatusTestHelper.running())
     val expectedEffect = InstanceUpdateEffect.Update(instance, Some(instance), events = Nil)
     val storeException: RuntimeException = new scala.RuntimeException("fail")
     val ack = InstanceTrackerActor.Ack(f.opSender.ref, InstanceUpdateEffect.Failure(storeException))
@@ -173,7 +173,7 @@ class InstanceOpProcessorImplTest
     val builder = TestInstanceBuilder.newBuilderWithLaunchedTask(appId)
     val instance = builder.getInstance()
     val storeFailed: RuntimeException = new scala.RuntimeException("store failed")
-    val stateOp = builder.stateOpUpdate(MesosTaskStatusTestHelper.running)
+    val stateOp = builder.stateOpUpdate(MesosTaskStatusTestHelper.running())
     val expectedEffect = InstanceUpdateEffect.Update(instance, Some(instance), events = Nil)
     f.stateOpResolver.resolve(stateOp) returns Future.successful(expectedEffect)
     f.instanceRepository.store(instance) returns Future.failed(storeFailed)
@@ -325,7 +325,7 @@ class InstanceOpProcessorImplTest
     Given("a statusUpdateResolver and an update")
     val builder = TestInstanceBuilder.newBuilderWithLaunchedTask(appId)
     val instance = builder.getInstance()
-    val stateOp = builder.stateOpUpdate(MesosTaskStatusTestHelper.running)
+    val stateOp = builder.stateOpUpdate(MesosTaskStatusTestHelper.running())
     val expectedEffect = InstanceUpdateEffect.Noop(instance.instanceId)
     f.stateOpResolver.resolve(stateOp) returns Future.successful(expectedEffect)
     f.instanceRepository.get(instance.instanceId) returns Future.successful(Some(instance))
@@ -378,6 +378,61 @@ class InstanceOpProcessorImplTest
     And("no more interactions")
     f.verifyNoMoreInteractions()
   }
+
+  // Mesos 1.1 task statuses specs. See https://mesosphere.atlassian.net/browse/DCOS-9941
+
+  test("process TASK_FAILED update for running task") {
+//    val f = new Fixture
+//    val appId = PathId("/app")
+//
+//    Given("a taskRepository")
+//    val builder = TestInstanceBuilder.newBuilder(appId).addTaskRunning()
+//
+//    And("a running instance")
+//    val instance = builder.getInstance()
+//
+//    And("a TASK_FAILED update")
+//    val stateOp = builder.stateOpUpdate(MesosTaskStatusTestHelper.failed)
+//
+//    val expectedEffect = InstanceUpdateEffect.Expunge(instance, events = Nil)
+//    val ack = InstanceTrackerActor.Ack(f.opSender.ref, expectedEffect)
+//
+//    f.stateOpResolver.resolve(stateOp) returns Future.successful(expectedEffect)
+//    f.instanceRepository.delete(instance.instanceId) returns Future.successful(Done)
+//
+//    When("the processor processes an update")
+//    val result = f.processor.process(
+//      InstanceOpProcessor.Operation(deadline, f.opSender.ref, instance.instanceId, InstanceUpdateOperation.ForceExpunge(instance.instanceId))
+//    )
+//    f.instanceTrackerProbe.expectMsg(InstanceTrackerActor.StateChanged(ack))
+//    f.instanceTrackerProbe.reply(())
+//
+//    Then("it replies with unit immediately")
+//    result.futureValue should be(())
+//
+//    Then("The StateOpResolver is called")
+//    verify(f.stateOpResolver).resolve(stateOp)
+//
+//    And("it calls expunge")
+//    verify(f.instanceRepository).delete(instance.instanceId)
+//
+//    And("no more interactions")
+//    f.verifyNoMoreInteractions()
+  }
+
+  test("process TASK_GONE update for running task") {}
+
+  test("process TASK_DROPPED update for staging task") {}
+
+  test("process TASK_DROPPED update for starting task") {}
+
+  test("process TASK_UNREACHABLE update for starting task") {}
+
+  test("process TASK_UNREACHABLE update for staging task") {}
+
+  test("process TASK_UNREACHABLE update for running task") {}
+
+  test("process TASK_UNKNOWN update for unreachable task") {}
 
   class Fixture {
     lazy val config = MarathonTestHelper.defaultConfig()
