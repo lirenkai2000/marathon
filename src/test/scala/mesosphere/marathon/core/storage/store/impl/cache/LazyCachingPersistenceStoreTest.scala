@@ -42,6 +42,8 @@ class LazyCachingPersistenceStoreTest extends AkkaUnitTest
 
   behave like basicPersistenceStore("LazyCache(InMemory)", cachedInMemory)
   behave like basicPersistenceStore("LazyCache(Zk)", cachedZk)
+  behave like basicPersistenceStore("LazyVersionedCache(Zk)", withLazyVersionCaching)
+
   // TODO: Mock out the backing store.
 
   behave like cachingPersistenceStore("cache internals(InMemory)", withLazyVersionCaching)

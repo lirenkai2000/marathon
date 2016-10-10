@@ -184,7 +184,7 @@ case class LazyVersionCachingPersistentStore[K, Category, Serialized](
     lockManager.executeSequentially((category, storageId).toString())(future(category, storageId))
   }
 
-  protected[cache] def maybePurgeCachedVersions(
+  private[cache] def maybePurgeCachedVersions(
     maxEntries: Int = config.maxEntries,
     purgeCount: Int = config.purgeCount,
     pRemove: Double = config.pRemove): Unit =
@@ -198,7 +198,11 @@ case class LazyVersionCachingPersistentStore[K, Category, Serialized](
       }
     }
 
-  protected def updateCachedVersions[V](
+  /**
+    * Assumes that callers have already implemented appropriate locking via [[withVersionCache]] and
+    * [[withVersionedValueCache]].
+    */
+  private[this] def updateCachedVersions[V](
     storageId: K,
     version: OffsetDateTime,
     category: Category,
